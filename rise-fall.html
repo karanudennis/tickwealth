@@ -57,10 +57,6 @@ TW.ready(function(){
   const G=[[0,'Ticks'],[60,'1m'],[300,'5m'],[900,'15m'],[3600,'1h']];
   $('#gran').innerHTML=G.map(g=>`<button class="btn ${g[0]===gran?'active':''}" data-g="${g[0]}">${g[1]}</button>`).join('')+'<span class="spacer"></span><button class="btn" id="zo" title="Zoom out">−</button><button class="btn" id="zi" title="Zoom in">+</button><button class="btn" id="zl" title="Jump to latest">⇥</button>';
   $('#gran').onclick=e=>{const b=e.target.closest('[data-g]'); if(!b)return; gran=+b.dataset.g; document.querySelectorAll('[data-g]').forEach(x=>x.classList.toggle('active',x===b)); startChart();};
-  const IB=[['ma','MA 20/50'],['ema','EMA 20'],['bb','Bollinger'],['rsi','RSI 14'],['macd','MACD']]; let IND={}; try{IND=JSON.parse(sessionStorage.getItem('tw_ind'))||{}}catch(e){}
-  const ib=document.createElement('div'); ib.className='indbar'; ib.setAttribute('aria-label','Indicators'); $('#gran').after(ib);
-  IB.forEach(([k,l])=>{const b=document.createElement('button'); b.className='btn'+(IND[k]?' active':''); b.textContent=l; b.type='button'; b.setAttribute('aria-pressed',!!IND[k]); b.onclick=()=>{IND[k]=!IND[k]; b.classList.toggle('active',IND[k]); b.setAttribute('aria-pressed',!!IND[k]); sessionStorage.setItem('tw_ind',JSON.stringify(IND)); chart.setIndicators(IND)}; ib.appendChild(b)});
-  chart.setIndicators(IND);
   $('#zo').onclick=()=>chart.zoom(1.3); $('#zi').onclick=()=>chart.zoom(.77); $('#zl').onclick=()=>chart.latest();
 
   function restart(){ if(feed)feed.close(); chart.clear(); chart.message('Connecting…'); scan=null; $('#scanTxt').textContent='Waiting for live ticks…';
@@ -75,7 +71,7 @@ TW.ready(function(){
     if(csock){csock.close();csock=null;}
     if(gran===0){ if(feed&&feed.prices.length) chart.setData(feed.prices.map((p,i)=>({t:feed.epochs[i],o:p,h:p,l:p,c:p})),true,feed.pip); else {chart.clear(); chart.message('Connecting…');} return; }
     chart.clear(); chart.message('Loading candles…'); const sym=top.symbol;
-    csock=new TW.Socket({url:TW.tickUrl(),
+    csock=new TW.Socket({
       onOpen:s=>s.send({ticks_history:sym,end:'latest',count:300,style:'candles',granularity:gran,subscribe:1}),
       onMessage:d=>{
         if(d.error){chart.message(d.error.message||'Chart error'); return;}

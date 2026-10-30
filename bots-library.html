@@ -97,7 +97,7 @@ TW.ready(function(){
   $('#scanAll').onclick=function(){
     const syms=TW.VOLS.filter(v=>v.digits), btn=this, out=[]; let got=0;
     btn.disabled=true; $('#allRes').innerHTML=''; $('#allMsg').textContent='Scanning 0/'+syms.length+'…';
-    const sock=new TW.Socket({url:TW.tickUrl(),
+    const sock=new TW.Socket({
       onOpen:s=>syms.forEach((v,i)=>s.send({ticks_history:v.id,end:'latest',count:300,style:'ticks',req_id:i+1})),
       onMessage:d=>{
         if(!d.req_id)return; const v=syms[d.req_id-1]; if(!v)return; got++;

@@ -1,52 +1,93 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<link rel="icon" type="image/svg+xml" href="favicon.svg">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TickWealth – Diagnostics</title>
-<link rel="stylesheet" href="core.css">
-<style>.pb{max-width:900px;margin:0 auto;padding:14px;display:grid;gap:14px}.pc{border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px;background:rgba(255,255,255,.04)}
-.ck{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:14px}.ck b{min-width:64px}.pass{color:#00ffa3}.fail{color:#ff3b69}.warn{color:#f5b83d}.skip{color:#8e9ab3}.ck span{flex:1;color:#c9d3e8}</style>
-</head>
-<body>
-<div id="top"></div>
-<div id="app"><div class="pb"><div class="pc"><h3>Diagnostics</h3><p style="color:#9fb0cc;font-size:13px">Checks each step of the connection and shows pass or fail. If something fails, press Copy report and send it. The report never includes your token.</p>
-<button class="btn" id="run">Run checks</button> <button class="btn ghost" id="cp">Copy report</button><div id="out"></div></div></div></div>
-<script src="config.js"></script><script src="core.js"></script><script src="pillars.js"></script>
-<script>
-TW.guard('Diagnostics', () => {
-  const $ = TW.$, out = $('out'), lines = [];
-  function add(name, st, detail) { const r = document.createElement('div'); r.className = 'ck'; const b = document.createElement('b'); b.className = st; b.textContent = st.toUpperCase(); const n = document.createElement('span'); n.textContent = name + (detail ? ': ' + detail : ''); r.append(b, n); out.appendChild(r); lines.push(st.toUpperCase() + ' | ' + name + (detail ? ': ' + detail : '')); }
-  const open = url => new Promise((res, rej) => { const ws = new WebSocket(url), t = setTimeout(() => { ws.close(); rej(new Error('timed out')); }, 8000); ws.onopen = () => { clearTimeout(t); res(ws); }; ws.onerror = () => { clearTimeout(t); rej(new Error('could not connect')); }; });
-  const ask = (ws, msg, ms = 9000) => new Promise((res, rej) => { const id = Math.floor(Math.random() * 1e9), t = setTimeout(() => { ws.removeEventListener('message', h); rej(new Error('no reply')); }, ms);
-    function h(e) { const d = JSON.parse(e.data); if (d.req_id === id) { clearTimeout(t); ws.removeEventListener('message', h); d.error ? rej(new Error(d.error.message)) : res(d); } } ws.addEventListener('message', h); ws.send(JSON.stringify(Object.assign({ req_id: id }, msg))); });
-  async function step(name, fn) { try { const d = await fn(); add(name, d && d.warn ? 'warn' : 'pass', d && d.t); return d; } catch (e) { add(name, 'fail', e.message); return null; } }
-  async function run() {
-    out.textContent = ''; lines.length = 0; let ws = null, legacy = false;
-    add('Browser WebSocket support', 'WebSocket' in window ? 'pass' : 'fail');
-    const t0 = Date.now();
-    ws = await step('Connect to Deriv public data (' + TW.settings.endpoint.replace('wss://', '') + ')', async () => { const w = await open(TW.settings.endpoint); return Object.assign(w, { _t: 'opened in ' + (Date.now() - t0) + ' ms' }); });
-    if (!ws) { ws = await step('Fallback: legacy endpoint', async () => { const w = await open(TW.LEGACY); legacy = true; return w; }); }
-    if (ws) {
-      await step('Ping', async () => { const t = Date.now(); await ask(ws, { ping: 1 }); return { t: (Date.now() - t) + ' ms' }; });
-      await step('Market list (active_symbols)', async () => { const d = await ask(ws, { active_symbols: 'brief' }); const n = (d.active_symbols || []).length; if (!n) throw new Error('empty list'); return { t: n + ' markets' }; });
-      await step('Live tick (R_100)', async () => { const d = await ask(ws, { ticks: 'R_100', subscribe: 1 }); ws.send(JSON.stringify({ forget_all: 'ticks' })); return { t: 'quote ' + d.tick.quote }; });
-      await step('History: 1000 ticks', async () => { const d = await ask(ws, { ticks_history: 'R_100', end: 'latest', count: 1000, style: 'ticks' }); const n = d.history.prices.length; return n >= 1000 ? { t: n + ' ticks' } : { warn: 1, t: 'only ' + n + ' ticks' }; });
-      await step('Candles for the chart (1 minute)', async () => { const d = await ask(ws, { ticks_history: 'R_100', end: 'latest', count: 20, style: 'candles', granularity: 60 }); return { t: d.candles.length + ' candles' }; });
-      await step('Price quote (Rise, 5 ticks, 1 USD)', async () => { const base = { proposal: 1, basis: 'stake', amount: 1, contract_type: 'CALL', currency: 'USD', duration: 5, duration_unit: 't' };
-        try { const d = await ask(ws, Object.assign({ [legacy ? 'symbol' : 'underlying_symbol']: 'R_100' }, base)); return { t: 'payout ' + d.proposal.payout }; }
-        catch (e) { const d = await ask(ws, Object.assign({ [legacy ? 'underlying_symbol' : 'symbol']: 'R_100' }, base)); return { warn: 1, t: 'worked only with the other symbol field name (' + e.message + ')' }; } });
-      ws.close();
+/* Shared page builder for the three digit-contract pages (Over/Under, Even/Odd, Matches/Differs). */
+TW.digitPage = function (cfg) {
+  TW.ready(function () {
+    const $ = TW.$;
+    const q = TW.qs();
+    let tab = cfg.tabs.some(t => t.id === q.type) ? q.type : cfg.tabs[0].id;
+    let pick = cfg.picker ? (q.barrier != null && q.barrier !== '' && +q.barrier >= 0 && +q.barrier <= 9 ? +q.barrier : cfg.picker.def) : null;
+    document.body.classList.add('t-' + cfg.theme);
+    $('#app').innerHTML = `
+    <div class="layout">
+      <section class="left">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div class="h" id="hdr"></div><div class="dim" id="liveTxt" style="font-size:11px"></div></div>
+        <div class="sub">${cfg.hint}</div>
+        <div class="d-grid" id="dGrid"></div>
+        <div class="scanbar"><div class="t" id="scanTxt">Waiting for live ticks…</div><button class="btn" id="scanBtn">✦ PATTERN SCAN</button><button class="btn ghost" id="askAi">✦ Ask AI</button></div>
+        <div class="notice">${TW.esc(TW.DISCLAIMER)}</div>
+      </section>
+      <aside class="side">
+        <div class="panel">
+          <div class="h">${cfg.title}</div>
+          <div class="seg" id="tabs">${cfg.tabs.map((t, i) => `<button data-t="${t.id}" class="${t.cls || ''}">${t.label}</button>`).join('')}</div>
+          ${cfg.picker ? `<div class="lbl">${cfg.picker.label}</div><div class="bgrid" id="bGrid"></div>` : ''}
+          <div class="lbl">DURATION</div>
+          <div class="ctrl"><button data-for="dur" data-step="-1">−</button><input id="dur" type="number" min="1" max="10" step="1" value="${Math.min(10, Math.max(1, +q.dur || cfg.dur || 5))}"><button data-for="dur" data-step="1">+</button><span class="u">ticks</span></div>
+          <div class="lbl">STAKE</div>
+          <div class="ctrl"><button data-for="stake" data-step="-1">−</button><input id="stake" type="number" min="0.35" step="0.5" value="1.00"><button data-for="stake" data-step="1">+</button><span class="u">USD</span></div>
+          <div class="quote"><span id="qTxt">Payout …</span><span id="qProfit"></span></div>
+          <button class="buy" id="buyBtn">Buy<small id="buySub">&nbsp;</small></button>
+        </div>
+        <div class="panel" id="logPanel"></div>
+      </aside>
+    </div>
+    <div class="foot">TickWealth is an independent tool and is not affiliated with Deriv. ${TW.esc(TW.DISCLAIMER)}</div>`;
+
+    let feed = null, busy = false;
+    const top = TW.mountTop({ active: cfg.active, symbols: 'digits', defaultSymbol: 'R_25', onSymbol: () => restart() });
+    TW.mountLog($('#logPanel'));
+    const pb = cfg.picker ? TW.digitButtons($('#bGrid'), d => { pick = d; refresh(); }, d => cfg.picker.off && cfg.picker.off(d, tab)) : null;
+
+    function params() {
+      const p = { contract_type: cfg.contract(tab, pick), symbol: top.symbol, amount: +$('#stake').value || 1, duration: +$('#dur').value || 1, label: cfg.label(tab, pick) };
+      if (cfg.picker) p.barrier = pick;
+      return p;
     }
-    const app = String(TW.settings.appId || '');
-    add('App ID configured', !app || app === '1089' || app === 'YOUR_APP_ID' ? 'fail' : 'pass', !app || app === '1089' ? 'still the old test ID' : app.slice(0, 6) + '...');
-    await step('Deriv REST API reachable from this browser', async () => { try { const r = await fetch('https://api.derivws.com/trading/v1/options/accounts', { headers: { 'Deriv-App-ID': app } }); return { t: 'HTTP ' + r.status + ' (a reply without a token is expected)' }; } catch (e) { throw new Error('blocked (CORS or network). Login from this site may fail'); } });
-    add('Login state', TW.account.authed ? 'pass' : 'skip', TW.account.authed ? TW.account.loginid + (TW.account.virtual ? ' (demo)' : ' (REAL)') + ', balance ' + TW.account.balance : 'not logged in');
-    add('Trading mode', 'skip', TW.mode ? TW.mode() : 'unknown');
-  }
-  $('run').onclick = run; $('cp').onclick = () => { const t = 'TickWealth diagnostics ' + new Date().toISOString() + '\n' + lines.join('\n'); navigator.clipboard ? navigator.clipboard.writeText(t).then(() => TW.toast('Report copied', 'ok')) : TW.toast(t); };
-});
-</script>
-</body>
-</html>
+    const refreshQuote = TW.watchQuote(params, (qt, msg) => {
+      if (qt) { const st = +$('#stake').value || 1; $('#qTxt').innerHTML = 'Payout <b>' + TW.money(qt.payout) + '</b>'; $('#qProfit').innerHTML = 'Profit <b>' + TW.money(qt.payout - st) + '</b>'; $('#buySub').textContent = 'Payout ' + TW.money(qt.payout); }
+      else { $('#qTxt').textContent = msg === 'loading' ? 'Getting price…' : msg; $('#qProfit').textContent = ''; if (msg !== 'loading') $('#buySub').innerHTML = '&nbsp;'; }
+    });
+    function refresh(quote) {
+      if (cfg.picker && cfg.picker.off && cfg.picker.off(pick, tab)) pick = cfg.picker.fix(tab, pick);
+      document.querySelectorAll('#tabs button').forEach(b => { const on = b.dataset.t === tab; b.classList.toggle('active', on); });
+      const bb = $('#buyBtn'); bb.firstChild.textContent = 'Buy ' + cfg.label(tab, pick);
+      bb.className = 'buy ' + ((cfg.tabs.find(t => t.id === tab) || {}).cls || '');
+      if (pb) pb.mark(pick);
+      const d = feed ? feed.digits : [];
+      TW.renderCircles($('#dGrid'), d, { state: x => cfg.state(x, tab, pick), tag: x => cfg.tag(x, tab, pick) });
+      $('#hdr').textContent = cfg.header(tab, pick) + ' · ' + d.length + ' TICKS';
+      if (d.length) $('#liveTxt').textContent = 'LIVE ' + TW.volName(top.symbol); else $('#liveTxt').textContent = '';
+      if (quote !== false) refreshQuote();
+    }
+    function restart() {
+      if (feed) feed.close();
+      $('#scanTxt').textContent = 'Waiting for live ticks…';
+      feed = TW.tickFeed(top.symbol, {
+        count: 1000,
+        onStatus: s => TW.setStatus(s),
+        onError: m => { TW.setStatus('error', m); $('#scanTxt').textContent = 'Market error: ' + m; },
+        onHistory: () => refresh(false), onTick: () => refresh(false)
+      });
+      refresh();
+    }
+    $('#tabs').onclick = e => { const b = e.target.closest('[data-t]'); if (b) { tab = b.dataset.t; refresh(); } };
+    ['stake', 'dur'].forEach(i => $('#' + i).addEventListener('input', refreshQuote));
+    $('#scanBtn').onclick = () => {
+      if (!feed || feed.digits.length < 30) { TW.toast('Need at least 30 live ticks first.'); return; }
+      const r = cfg.scan(TW.analyze(feed.digits), tab, pick);
+      tab = r.tab; if (r.pick != null) pick = r.pick;
+      $('#scanTxt').innerHTML = r.text + ` ${TW.sigHtml(r.strength)} <span class="dim">(recent frequency vs normal odds — not a prediction)</span>`;
+      refresh();
+    };
+    $('#askAi').onclick = () => TW.ai && TW.ai.ask('Explain what this market is showing right now and what the current signal does and does not mean.');
+    $('#buyBtn').onclick = async () => {
+      if (busy) return; busy = true; $('#buyBtn').disabled = true;
+      try {
+        const p = params(), t = await TW.trade(p);
+        TW.toast('Bought ' + p.label + ' — waiting for result', 'ok');
+        t.done.then(r => TW.toast((r.profit > 0 ? 'WON +' : 'LOST ') + TW.money(r.profit), r.profit > 0 ? 'ok' : 'err'));
+      } catch (e) { if (!e.quiet) TW.toast(e.message, 'err', 5000); }
+      finally { busy = false; $('#buyBtn').disabled = false; }
+    };
+    restart();
+  });
+};

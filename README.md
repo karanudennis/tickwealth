@@ -60,18 +60,3 @@ The new `index.html` is the landing page. The previous home page is kept as `ind
 
 ## Logo
 `logo.svg` (full), `logo-mark.svg` and `favicon.svg`. The mark is used in the top bar and as the favicon; the full logo is on the landing page.
-
-## Insight Lab, Diagnostics and tests
-- `insight.html`: randomness suite, AI Truth Test (do simple prediction models beat chance?), risk simulator with Martingale comparison, Boom/Crash spike probabilities.
-- `diagnostics.html`: pass/fail checks for connection, ticks, history, candles, quote, REST access and login. Share the copied report if something fails.
-- `stats.js` holds the maths; run `node tests.js` to verify it.
-- `pillars.js`: pillar manifest and an error boundary so one failing pillar does not stop the others.
-
-## Playbook structure
-Topic (Over/Under, Even/Odd, Matches/Differs, Rise/Fall, Boom/Crash) > Subtopic (e.g. Under, Over) > Variant buttons (e.g. Under 9 to Under 1) > Entry rule. Each variant shows the true odds, a test vs random entries, a countdown when armed, and a Trade now button.
-
-## Latest fixes
-- Chart and Analyzer data sockets now use the public endpoint (login links are single-use), so switching markets works while logged in.
-- Digit circles are built once and updated in place: smooth gliding cursor, rank colours stay visible on dimmed circles.
-- Rise/Fall chart has MA 20/50, EMA 20, Bollinger, RSI 14 and MACD buttons.
-- Bots page has a library of ready-made bots for every market plus a quick and a deep market scanner.
