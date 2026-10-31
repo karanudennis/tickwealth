@@ -503,7 +503,7 @@
     TW.on('trade', draw); TW.on('account', draw); draw();
   };
 
-  const PAGES = [['index.html', 'Home'], ['rise-fall.html', 'Rise/Fall'], ['over-under.html', 'Over/Under'], ['even-odd.html', 'Even/Odd'], ['matches-differs.html', 'Matches/Differs'], ['analyzer.html', 'Analyzer'], ['playbook.html', 'Playbook'], ['bots-library.html', 'Bots'], ['settings.html', 'Settings']];
+  const PAGES = [['index.html', 'Home'], ['rise-fall.html', 'Rise/Fall'], ['over-under.html', 'Over/Under'], ['even-odd.html', 'Even/Odd'], ['matches-differs.html', 'Matches/Differs'], ['analyzer.html', 'Analyzer'], ['playbook.html', 'Playbook'], ['insight.html', 'Insight Lab'], ['diagnostics.html', 'Diagnostics'], ['bots-library.html', 'Bots'], ['settings.html', 'Settings']];
   TW.setStatus = function (s, msg) {
     const d = $('#twDot'), t = $('#twStatus'); if (!d) return;
     d.className = 'dot ' + s;

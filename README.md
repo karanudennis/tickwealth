@@ -60,3 +60,9 @@ The new `index.html` is the landing page. The previous home page is kept as `ind
 
 ## Logo
 `logo.svg` (full), `logo-mark.svg` and `favicon.svg`. The mark is used in the top bar and as the favicon; the full logo is on the landing page.
+
+## Insight Lab, Diagnostics and tests
+- `insight.html`: randomness suite, AI Truth Test (do simple prediction models beat chance?), risk simulator with Martingale comparison, Boom/Crash spike probabilities.
+- `diagnostics.html`: pass/fail checks for connection, ticks, history, candles, quote, REST access and login. Share the copied report if something fails.
+- `stats.js` holds the maths; run `node tests.js` to verify it.
+- `pillars.js`: pillar manifest and an error boundary so one failing pillar does not stop the others.
